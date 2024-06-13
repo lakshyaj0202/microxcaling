@@ -10,7 +10,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .common_lib import check_diff, torch_version_ge
+import os
+import sys
+file_dir = os.path.dirname(__file__)
+sys.path.append(file_dir)
+
+from common_lib import check_diff, torch_version_ge
 
 from mx import *
 

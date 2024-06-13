@@ -10,16 +10,19 @@ import pytest
 import torch
 import numpy as np
 import sys
+import os
 
-from .common_lib import (
+sys.path.append(os.path.dirname("/home/coder/microxcaling/mx/"))
+
+from tests.common_lib import (
         check_diff,
         check_diff_quantize,
         all_encodings
 )
 
-from mx.specs import get_default_mx_specs
-from mx.formats import _get_format_params
-from mx.elemwise_ops import (
+from specs import get_default_mx_specs
+from formats import _get_format_params
+from elemwise_ops import (
         _quantize_fp,
         _quantize_bfloat,
         _quantize_elemwise

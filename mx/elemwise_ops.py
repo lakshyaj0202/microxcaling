@@ -21,8 +21,12 @@ import os
 import torch
 import numpy as np
 
-from .formats import RoundingMode, _get_format_params
-from .formats import _get_min_norm, _get_max_norm
+import sys
+file_dir = os.path.dirname(__file__)
+sys.path.append(file_dir)
+
+from formats import RoundingMode, _get_format_params
+from formats import _get_min_norm, _get_max_norm
 
 
 # -------------------------------------------------------------------------
@@ -115,7 +119,7 @@ def _quantize_elemwise_core(A, bits, exp_bits, max_norm, round='nearest',
     if custom_cuda:
         A = A.contiguous()
 
-        from . import custom_extensions
+        import mx.custom_extensions as custom_extensions
         if A.device.type == "cuda":
             A = custom_extensions.funcs.quantize_elemwise_func_cuda(
                 A, bits, exp_bits, max_norm, RoundingMode[round],
