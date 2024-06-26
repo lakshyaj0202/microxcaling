@@ -49,6 +49,8 @@ def quantize_mx_kernel  (input_ptr, zero_ptr, max_ptr, n, W, H,
                                    rounding_mode, True, True)
     scaled_out = scaled_out * scale
     tl.static_print(BLOCK_SIZE)
+    # assert all(len(block_shape) == len(list_like) for list_like in [shape, strides, offsets, order]), \
+    #     "Expected shape/strides/offsets/block_shape to have the same length"
     O_block_ptr = tl.make_block_ptr(
         base=output_ptr,
         shape=(W, H),
