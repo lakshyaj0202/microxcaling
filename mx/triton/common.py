@@ -62,47 +62,45 @@ def get_biased_exponent(float_input: tl.tensor):
     int_input = float_input.to(tl.int32, bitcast=True)
     exp = int_input & FLOAT32_EXP_MASK
     exp = exp >> FLOAT32_EXP_OFFSET
-    return exp.to(tl.int32)
+    return exp
 
 @triton.jit
 def get_unbiased_exponent(input: tl.tensor):
     float_input = input.to(tl.float32)
     exp = get_biased_exponent(float_input)
-    if exp==0:
-        return 1 - FLOAT32_EXP_BIAS
+    # if ((exp | (~exp + 1)) >> 31) & 1:    # bit manip to check if exponent is 0
+    if exp == 0:
+        exp_new = 1 - 127 # 1 - FLOAT32_EXP_BIAS
+        return exp_new.to(tl.int32)
     else:
-        return exp - FLOAT32_EXP_BIAS
+        exp_new = exp - 127  # exp - FLOAT32_EXP_BIAS
+        return exp_new.to(tl.int32)
 
 @triton.jit
-def clamp_shared_exp(shared_exp: tl.tensor, scale_bits):
+def clamp_shared_exp(shared_exp: tl.tensor, scale_bits):    
     if scale_bits != 0:
         emax = 1 << (scale_bits-1) -1
     else:
-        emax = FLOAT32_EXP_MAX
-
-    shared_ub = shared_exp - FLOAT32_EXP_BIAS
-    
-    if shared_ub > emax:
-        shared_exp = FLOAT32_EXP_MAX
-    if shared_ub < -emax:
-        shared_exp = FLOAT32_EXP_BIAS-emax
-
+        emax = 255 # FLOAT32_EXP_MAX
+    shared_ub = shared_exp - 127 # shared_exp - FLOAT32_EXP_BIAS
+    exp_max_tensor = tl.zeros_like(shared_exp) + 255
+    exp_bias_tensor = tl.zeros_like(shared_exp) + 127 - emax
+    shared_exp = tl.where(shared_ub > emax, exp_max_tensor, shared_exp)
+    shared_exp = tl.where(shared_exp < -emax, exp_bias_tensor, shared_exp)
     return shared_exp
 
 @triton.jit
 def get_shared_scale(shared_exp: tl.tensor, scale_bits, elem_max_norm):
-    elem_emax = get_unbiased_exponent(tl.load(elem_max_norm))
+    elem_emax = get_unbiased_exponent(elem_max_norm)
     if (shared_exp != FLOAT32_EXP_MAX):
         shared_exp = shared_exp - elem_emax
-
     shared_exp = clamp_shared_exp(shared_exp, scale_bits)
-
     if shared_exp ==0 or shared_exp == FLOAT32_EXP_MASK:
-        scale_mant = FLOAT32_IMPLIED1 >> 1
+        scale_mant = (1 << 23) >> 1
     else:
         scale_mant = 0
 
-    return int_to_float_preserve_bits(0, shared_exp, scale_mant).to(tl.float32)
+    return construct_float(0, shared_exp, scale_mant).to(tl.float32)
     
 
     

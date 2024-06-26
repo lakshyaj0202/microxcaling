@@ -172,6 +172,8 @@ def _quantize_elemwise_core(A, bits, exp_bits, max_norm, round='nearest',
         output = torch.sparse_coo_tensor(sparse_A.indices(), output,
                 sparse_A.size(), dtype=sparse_A.dtype, device=sparse_A.device,
                 requires_grad=sparse_A.requires_grad)
+    
+    
 
     return out
 

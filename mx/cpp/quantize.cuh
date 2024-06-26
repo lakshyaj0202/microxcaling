@@ -5,6 +5,9 @@
 #ifndef PYT_MX_QUANTIZE_CUH
 #define PYT_MX_QUANTIZE_CUH
 
+#include <stdio.h>
+#include <typeinfo>
+
 //---------------------------------------------------------
 // Shift right and round a float32 mantissa
 // Example of "allow_overflow". Say we are rounding 11111 to 4 bits
@@ -145,6 +148,11 @@ float quantize_elemwise(
         else
             output = construct_float(sign, 0xFF, 0);
     }
+    
+    std::string s = typeid(output).name()
+    # if __CUDA_ARCH__>=200
+        printf("%s \n", s);
+    #endif  
     return output;
 }
 
