@@ -6,17 +6,15 @@ from common import get_biased_exponent, get_sign, get_trailing_mantissa, constru
 
 FLOAT32_EXP_BIAS = 127
 FLOAT32_TRAILING_MBITS = 23
-FLOAT32_FULL_MBITS = (FLOAT32_TRAILING_MBITS + 1)
+FLOAT32_FULL_MBITS = (FLOAT32_TRAILING_MBITS + 1) # 24
 FLOAT32_IMPLIED1 = (1 << FLOAT32_TRAILING_MBITS)
-
-import ipdb
 
 @triton.jit
 def shift_right_round_mantissa(mantissa: tl.tensor, is_subnorm,
                                mbits, exp_diff,
                                rounding_mode, allow_overflow):
     if not is_subnorm:
-        mantissa = mantissa + FLOAT32_IMPLIED1
+        mantissa = mantissa + (1 << 23) #FLOAT32_IMPLIED1
         fp32_sig_bits = 24
     else:
         fp32_sig_bits = 23
@@ -59,7 +57,7 @@ def shift_left_mantissa(mantissa: tl.tensor,  exp_diff:tl.tensor, is_subnorm, mb
     zeros_tensor = tl.zeros_like(mantissa)
     overflow = tl.where(mantissa >= zeros_tensor + (1 << fp32_sig_bits), ones_tensor, zeros_tensor)
     mantissa = tl.where(overflow & (~is_subnorm), mantissa >> 1, mantissa)
-    implied_tensor = tl.zeros_like(mantissa) + FLOAT32_IMPLIED1
+    implied_tensor = tl.zeros_like(mantissa) + (1 << 23) #FLOAT32_IMPLIED1
     mantissa = mantissa & (implied_tensor - 1)
     return overflow
 
@@ -89,12 +87,12 @@ def quantize_elemwise(input:tl.tensor, bits, exp_bits, max_norm,
     # mbits includes implicit 1, so when new_biased_exp==0
     # we want exp_diff = 1 to truncate away 1 bit
     if new_biased_exp <= 0:
-        exp_diff = 1-new_biased_exp
+        exp_diff = 1 - new_biased_exp
     else:
         exp_diff = tl.zeros_like(new_biased_exp)
     
-    if exp_diff > FLOAT32_FULL_MBITS:
-        exp_diff = tl.zeros_like(exp_diff) + FLOAT32_FULL_MBITS
+    if exp_diff > 24: #FLOAT32_FULL_MBITS
+        exp_diff = tl.zeros_like(exp_diff) + 24 #FLOAT32_FULL_MBITS
 
     tmant = shift_right_round_mantissa(tmant, biased_exp==0,
                                        mbits, exp_diff, rounding_mode,

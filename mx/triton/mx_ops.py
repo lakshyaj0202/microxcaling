@@ -46,6 +46,9 @@ from elemwise_ops import (
         _round_mantissa,
         _quantize_elemwise_core
 )
+import triton
+import triton.language as tl
+from common import get_grid
 
 
 # -------------------------------------------------------------------------
@@ -171,6 +174,14 @@ def _undo_reshape_to_blocks(A, padded_shape, orig_shape, axes):
         A = torch.squeeze(A, dim=axis + 1)
     return A
 
+@triton.jit
+def _get_max_values(A_ptr, max_ptr, n, axis, BLOCK_SIZE:tl.constexpr):
+    offsets = tl.program_id(0)*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < n
+
+    max_ = tl.max(tl.load(A_ptr+offsets, mask), axis = axis)
+    tl.store(max_ptr+offsets, max_, mask)
+
 
 # -------------------------------------------------------------------------
 # Main funcs
@@ -225,7 +236,31 @@ def _quantize_mx(
 
         assert(shared_exp_method == "max")
         # implement in triton
+        # input_size = A.size()
+        # ndim = A.ndim
+        # axis_size = input_size[axis]
+        # pre_axis_size=1
+        # for i in range(axis):
+        #     pre_axis_size *= input_size[i]
+
+        # post_axis_size = 1
+        # for i in range(axis+1, ndim):
+        #     post_axis_size *= input_size[i]
+
+        # total_size = pre_axis_size * axis_size * post_axis_size
+        # max_values = torch.zeros_like(A)
+
+        # grid = get_grid(total_size)
+        # n = A.numel()
+        # _get_max_values[grid](A, max_values, n, block_size)
         max_values = A.abs().max(dim=axis, keepdim=True).values
+        A_shape = list(A.shape)
+        ndim = A.ndim
+        for i in range(axis):
+            A_shape[i] = 1
+        for i in range(axis+1, ndim):
+            A_shape[i] = 1
+        max_values = max_values.repeat(A_shape)
         max_values = max_values.to("cuda")
 
         A = A.contiguous()

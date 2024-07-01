@@ -49,19 +49,19 @@ def get_grid(numel):
 
 @triton.jit
 def get_sign(float_input: tl.tensor):
-    sign = float_input.to(tl.int32, bitcast=True) >> FLOAT32_SIGN_OFFSET
+    sign = float_input.to(tl.int32, bitcast=True) >> 31 #FLOAT32_SIGN_OFFSET
     return sign
 
 @triton.jit
 def get_trailing_mantissa(float_input: tl.tensor):
-    return float_input.to(tl.int32, bitcast=True) & FLOAT32_MANTISSA_MASK
+    return float_input.to(tl.int32, bitcast=True) & 0x007fffff #FLOAT32_MANTISSA_MASK
 
 @triton.jit
 def get_biased_exponent(float_input: tl.tensor):
     float_input = float_input.to(tl.float32)
     int_input = float_input.to(tl.int32, bitcast=True)
-    exp = int_input & FLOAT32_EXP_MASK
-    exp = exp >> FLOAT32_EXP_OFFSET
+    exp = int_input & 0x7f800000 #FLOAT32_EXP_MASK
+    exp = exp >> 23 # FLOAT32_EXP_OFFSET
     return exp
 
 @triton.jit
@@ -92,10 +92,10 @@ def clamp_shared_exp(shared_exp: tl.tensor, scale_bits):
 @triton.jit
 def get_shared_scale(shared_exp: tl.tensor, scale_bits, elem_max_norm):
     elem_emax = get_unbiased_exponent(elem_max_norm)
-    if (shared_exp != FLOAT32_EXP_MAX):
+    if (shared_exp != 255):  #FLOAT32_EXP_MAX
         shared_exp = shared_exp - elem_emax
     shared_exp = clamp_shared_exp(shared_exp, scale_bits)
-    if shared_exp ==0 or shared_exp == FLOAT32_EXP_MASK:
+    if shared_exp == 0 or shared_exp == 0x7f800000:  #FLOAT32_EXP_MASK
         scale_mant = (1 << 23) >> 1
     else:
         scale_mant = 0
