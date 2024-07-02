@@ -164,6 +164,7 @@ def _reshape_to_blocks(A, axes, block_size):
 
 def _undo_reshape_to_blocks(A, padded_shape, orig_shape, axes):
     # Undo tile reshaping
+    # print(A.values)
     A = A.view(padded_shape)
     # Undo padding
     if not list(padded_shape) == list(orig_shape):
@@ -264,6 +265,7 @@ def _quantize_mx(
         max_values = max_values.to("cuda")
 
         A = A.contiguous()
+        max_values = max_values.contiguous()
 
         if A.device.type == "cuda":
             A = funcs.quantize_mx_func(

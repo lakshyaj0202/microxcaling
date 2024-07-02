@@ -176,5 +176,4 @@ def all_encodings(_e, _m, encodes_infs=True, device="cpu"):
         x[_i + 2**(_e+_m)] = -_value
 
     _CACHE[(_e, _m, encodes_infs)] = x
-
     return torch.as_tensor(x, dtype=torch.float32, device=device)
