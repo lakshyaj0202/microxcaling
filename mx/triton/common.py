@@ -34,10 +34,6 @@ def float_to_int_preserve_bits(float_number):
 @triton.jit
 def construct_float(sign, biased_exp, trailing_mantissa):
     bits = (sign << 31) | (biased_exp << 23) | trailing_mantissa
-    # # Convert integer to bytes (4 bytes for single precision float)
-    # float_bytes = struct.pack('>I', bits)
-    # # Unpack bytes to float
-    # result_float = struct.unpack('>f', float_bytes)[0]
     return bits.to(tl.float32, bitcast=True)
     
 def get_total_size(A: torch.tensor):
@@ -54,7 +50,9 @@ def get_sign(float_input: tl.tensor):
 
 @triton.jit
 def get_trailing_mantissa(float_input: tl.tensor):
-    return float_input.to(tl.int32, bitcast=True) & 0x007fffff #FLOAT32_MANTISSA_MASK
+    int_input = float_input.to(tl.int32, bitcast=True)
+    trail_mant = int_input & 0x007fffff
+    return  trail_mant #FLOAT32_MANTISSA_MASK
 
 @triton.jit
 def get_biased_exponent(float_input: tl.tensor):
@@ -69,12 +67,9 @@ def get_unbiased_exponent(input: tl.tensor):
     float_input = input.to(tl.float32)
     exp = get_biased_exponent(float_input)
     # if ((exp | (~exp + 1)) >> 31) & 1:    # bit manip to check if exponent is 0
-    if exp == 0:
-        exp_new = 1 - 127 # 1 - FLOAT32_EXP_BIAS
-        return exp_new.to(tl.int32)
-    else:
-        exp_new = exp - 127  # exp - FLOAT32_EXP_BIAS
-        return exp_new.to(tl.int32)
+    new_exp_tensor_true = tl.zeros_like(exp) - 126
+    exp_new = tl.where(exp==0, new_exp_tensor_true, exp - 127)
+    return exp_new.to(tl.int32)
 
 @triton.jit
 def clamp_shared_exp(shared_exp: tl.tensor, scale_bits):    
@@ -92,15 +87,15 @@ def clamp_shared_exp(shared_exp: tl.tensor, scale_bits):
 @triton.jit
 def get_shared_scale(shared_exp: tl.tensor, scale_bits, elem_max_norm):
     elem_emax = get_unbiased_exponent(elem_max_norm)
-    if (shared_exp != 255):  #FLOAT32_EXP_MAX
-        shared_exp = shared_exp - elem_emax
+    shared_exp = tl.where(shared_exp != 255, shared_exp - elem_emax, shared_exp)
     shared_exp = clamp_shared_exp(shared_exp, scale_bits)
-    if shared_exp == 0 or shared_exp == 0x7f800000:  #FLOAT32_EXP_MASK
-        scale_mant = (1 << 23) >> 1
-    else:
-        scale_mant = 0
 
-    return construct_float(0, shared_exp, scale_mant).to(tl.float32)
+    scale_mant_up = tl.zeros_like(shared_exp).to(tl.int32) + ((1 << 23) >> 1)
+    scale_mant_zeros = tl.zeros_like(shared_exp).to(tl.int32)
+
+    scale_mant = tl.where(shared_exp == 0 or shared_exp == 0x7f800000, scale_mant_up, scale_mant_zeros)
+    
+    return construct_float(scale_mant_zeros, shared_exp, scale_mant).to(tl.float32)
     
 
     

@@ -10,16 +10,16 @@ FLOAT32_FULL_MBITS = (FLOAT32_TRAILING_MBITS + 1) # 24
 FLOAT32_IMPLIED1 = (1 << FLOAT32_TRAILING_MBITS)
 
 @triton.jit
-def shift_right_round_mantissa(mantissa: tl.tensor, is_subnorm,
-                               mbits, exp_diff,
+def shift_right_round_mantissa(mantissa: tl.tensor, is_subnorm: tl.tensor,
+                               exp_diff: tl.tensor, mbits,
                                rounding_mode, allow_overflow):
-    if not is_subnorm:
-        mantissa = mantissa + (1 << 23) #FLOAT32_IMPLIED1
-        fp32_sig_bits = 24
-    else:
-        fp32_sig_bits = 23
-
-    
+    mantissa = tl.where(is_subnorm, mantissa, mantissa + (1 << 23))
+    fp32_sig_bits = tl.where(is_subnorm, tl.zeros_like(exp_diff)+23, tl.zeros_like(exp_diff)+24)
+    # if not is_subnorm:
+    #     mantissa = mantissa + (1 << 23) #FLOAT32_IMPLIED1
+    #     fp32_sig_bits = 24
+    # else:
+    #     fp32_sig_bits = 23
     tbits = tl.zeros_like(exp_diff)
     mask = tl.zeros_like(exp_diff)
     tie = tl.zeros_like(exp_diff)
@@ -35,6 +35,7 @@ def shift_right_round_mantissa(mantissa: tl.tensor, is_subnorm,
 
     mantissa = mantissa >> exp_diff
     mantissa = mantissa >> (fp32_sig_bits - mbits - 1)
+    
     if rounding_mode == 2:
         check_mantissa = ((allow_overflow | mantissa) != ((1 << (mbits+1)) - 1)) & (~(tie & even))
         mantissa = tl.where(check_mantissa, mantissa+1, mantissa)
@@ -45,11 +46,12 @@ def shift_right_round_mantissa(mantissa: tl.tensor, is_subnorm,
     
 
 @triton.jit
-def shift_left_mantissa(mantissa: tl.tensor,  exp_diff:tl.tensor, is_subnorm, mbits):
-    if is_subnorm:
-        fp32_sig_bits = 23
-    else:
-        fp32_sig_bits = 24
+def shift_left_mantissa(mantissa: tl.tensor,  exp_diff:tl.tensor, is_subnorm: tl.tensor, mbits):
+    fp32_sig_bits = tl.where(is_subnorm, tl.zeros_like(exp_diff)+23, tl.zeros_like(exp_diff)+24)
+    # if is_subnorm:
+    #     fp32_sig_bits = 23
+    # else:
+    #     fp32_sig_bits = 24
 
     mantissa = mantissa << (fp32_sig_bits - mbits + exp_diff)
     # Handle overflow - don't shift when subnorm overflows into a normal
@@ -73,11 +75,12 @@ def quantize_elemwise(input:tl.tensor, bits, exp_bits, max_norm,
     mbits = bits - 1
     is_int = (exp_bits == 0)
     
-    # Integers can be treated as having exp bias of 1 ??
+    # Integers can be treated as having exp bias of 1
     if is_int:
-        new_bias = 1
+        new_bias = tl.zeros_like(biased_exp) + 1
     else:
-        new_bias = (1 << (exp_bits)) - 1
+        new_bias = tl.zeros_like(biased_exp) + ((1 << (exp_bits)) - 1)
+    new_bias = new_bias.to(tl.int32)
     new_biased_exp = biased_exp - 127 + new_bias # biased_exp - FLOAT32_EXP_BIAS + new_bias
     
     # Skip denorms
@@ -86,22 +89,15 @@ def quantize_elemwise(input:tl.tensor, bits, exp_bits, max_norm,
     # Use exp_diff to truncate additional bits for subnorms
     # mbits includes implicit 1, so when new_biased_exp==0
     # we want exp_diff = 1 to truncate away 1 bit
-    if new_biased_exp <= 0:
-        exp_diff = 1 - new_biased_exp
-    else:
-        exp_diff = tl.zeros_like(new_biased_exp)
-    
-    if exp_diff > 24: #FLOAT32_FULL_MBITS
-        exp_diff = tl.zeros_like(exp_diff) + 24 #FLOAT32_FULL_MBITS
+    exp_diff = tl.where(new_biased_exp <= 0, 1-new_biased_exp, tl.zeros_like(new_biased_exp))
+    exp_diff = tl.where(exp_diff > 24, tl.zeros_like(exp_diff) + 24, exp_diff)
 
-    tmant = shift_right_round_mantissa(tmant, biased_exp==0,
-                                       mbits, exp_diff, rounding_mode,
+    biased_exp_check = biased_exp == 0
+    tmant = shift_right_round_mantissa(tmant, biased_exp_check,
+                                       exp_diff, mbits, rounding_mode,
                                        not is_int)
-
-    if tmant == tl.zeros_like(tmant):
-        return tl.zeros_like(input)
     
-    overflow = shift_left_mantissa(tmant, exp_diff, biased_exp==0, mbits)
+    overflow = shift_left_mantissa(tmant, exp_diff, biased_exp_check, mbits)
 
     biased_exp = tl.where(overflow, biased_exp+1, biased_exp)
     
@@ -109,14 +105,13 @@ def quantize_elemwise(input:tl.tensor, bits, exp_bits, max_norm,
     output = construct_float(sign, biased_exp, tmant)
     neg_max_norm_tensor = tl.zeros_like(output) - max_norm
     max_norm_tensor = tl.zeros_like(output) + max_norm
+    biased_exp_tensor = tl.zeros_like(biased_exp) + 0xFF
+    tmant_tensor = tl.zeros_like(tmant)
+    output = tl.where((tl.abs(output) >  max_norm_tensor) & (is_int or saturate_normals), 
+                      tl.where(sign, neg_max_norm_tensor, max_norm_tensor),
+                      construct_float(sign, biased_exp_tensor, tmant_tensor))
 
-    if (tl.abs(output) >  max_norm_tensor):
-        if is_int or saturate_normals:
-            output = tl.where(sign, neg_max_norm_tensor, max_norm_tensor)
-        else:
-            biased_exp_tensor = tl.zeros_like(biased_exp) + 0xFF
-            tmant_tensor = tl.zeros_like(tmant)
-            output = construct_float(sign, biased_exp_tensor, tmant_tensor)
-
+    # if mantissa is 0, return 0, added condition at the end
+    output = tl.where(tmant == 0, tl.zeros_like(output), output)
     return output
     

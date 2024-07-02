@@ -48,8 +48,10 @@ def test_mx_encoding(elem_format, round,
 
     scale_bits = elem_format.element_format.bit_precision
     block_size = elem_format.block_size
-    x1 = all_encodings(8, 9, device="cuda")
+    x1 = torch.rand((2048, 128), device="cuda")
     x2 = x1.clone().detach().to(device)
+    # x1 = all_encodings(8, 9, device="cuda")
+    # x2 = x1.clone().detach().to(device)
 
     y1 = _quantize_mx(x1, scale_bits, elem_format,
                       block_size=block_size,
