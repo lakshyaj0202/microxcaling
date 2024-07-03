@@ -44,37 +44,6 @@ def quantize_mx_kernel  (input_ptr, zero_ptr, max_ptr, n,
     else:
         scaled_in = tl.load(zero_ptr + offsets, mask)
 
-
-
-    # biased_exp = get_biased_exponent(scaled_in)
-    # sign = get_sign(scaled_in)
-    # tmant = get_trailing_mantissa(scaled_in)
-    # is_int = True
-    # if is_int:
-    #     new_bias = tl.zeros_like(biased_exp) + 1
-    # else:
-    #     new_bias = tl.zeros_like(biased_exp) + ((1 << (elem_ebits)) - 1)
-    # new_biased_exp = biased_exp - 127 + new_bias # biased_exp - FLOAT32_EXP_BIAS + new_bias
-    
-    # exp_diff = tl.where(new_biased_exp <= 0, 1-new_biased_exp, tl.zeros_like(new_biased_exp))
-    # exp_diff = tl.where(exp_diff > 24, tl.zeros_like(exp_diff) + 24, exp_diff)
-    # biased_exp_check = biased_exp == 0
-    
-    # tmant = shift_right_round_mantissa(tmant, biased_exp_check,
-    #                                    exp_diff, elem_mbits, rounding_mode,
-    #                                    not is_int)
-    # overflow = shift_left_mantissa(tmant, exp_diff, biased_exp_check, elem_mbits)
-    # biased_exp = tl.where(overflow, biased_exp+1, biased_exp)
-    # output = construct_float(sign, biased_exp, tmant)
-    # neg_max_norm_tensor = tl.zeros_like(output) - elem_max_norm
-    # max_norm_tensor = tl.zeros_like(output) + elem_max_norm
-    # biased_exp_tensor = tl.zeros_like(biased_exp) + 0xFF
-    # tmant_tensor = tl.zeros_like(tmant)
-    # output = tl.where((tl.abs(output) >  max_norm_tensor) & (is_int), 
-    #                   tl.where(sign, neg_max_norm_tensor, max_norm_tensor),
-    #                   construct_float(sign, biased_exp_tensor, tmant_tensor))
-    # scaled_out = tl.where(tmant == 0, tl.zeros_like(output), output)
-
     scaled_out = quantize_elemwise(scaled_in, elem_mbits, elem_ebits, elem_max_norm,
                                    rounding_mode, True, True)
     scaled_out = scaled_out * scale
@@ -121,5 +90,5 @@ def quantize_mx(in_tensor, scale_bits, ebits, mbits, max_norm, max_values,
                              scale_bits, ebits, mbits, max_norm,
                              rounding_mode, flush_fp32_subnorms,
                              BLOCK_SIZE=BLOCK_SIZE)
-
+    
     return out_tensor

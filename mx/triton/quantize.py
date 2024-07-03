@@ -84,8 +84,8 @@ def quantize_elemwise(input:tl.tensor, bits, exp_bits, max_norm,
     new_biased_exp = biased_exp - 127 + new_bias # biased_exp - FLOAT32_EXP_BIAS + new_bias
     
     # Skip denorms
-    if ((not is_int) and (not allow_denorm)) and (new_biased_exp < 1):
-        return tl.zeros_like(input)
+    cond_skip_denorms = ((not is_int) and (not allow_denorm)) and (new_biased_exp < 1)
+
     # Use exp_diff to truncate additional bits for subnorms
     # mbits includes implicit 1, so when new_biased_exp==0
     # we want exp_diff = 1 to truncate away 1 bit
@@ -112,6 +112,6 @@ def quantize_elemwise(input:tl.tensor, bits, exp_bits, max_norm,
                       construct_float(sign, biased_exp_tensor, tmant_tensor))
 
     # if mantissa is 0, return 0, added condition at the end
-    output = tl.where(tmant == 0, tl.zeros_like(output), output)
+    output = tl.where(tmant == 0 & cond_skip_denorms, tl.zeros_like(output), output)
     return output
     
