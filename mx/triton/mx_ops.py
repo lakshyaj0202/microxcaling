@@ -178,10 +178,11 @@ def _undo_reshape_to_blocks(A, padded_shape, orig_shape, axes):
 @triton.jit
 def _get_max_values(A_ptr, max_ptr, n, axis, BLOCK_SIZE:tl.constexpr):
     offsets = tl.program_id(0)*BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    offsets = offsets.to(tl.int32)
     mask = offsets < n
-
-    max_ = tl.max(tl.load(A_ptr+offsets, mask), axis = axis)
+    max_ = tl.max(tl.load(A_ptr+offsets, mask), axis = axis, keep_dims = True)
     tl.store(max_ptr+offsets, max_, mask)
+    return
 
 
 # -------------------------------------------------------------------------
@@ -237,23 +238,15 @@ def _quantize_mx(
 
         assert(shared_exp_method == "max")
         # implement in triton
-        # input_size = A.size()
-        # ndim = A.ndim
-        # axis_size = input_size[axis]
-        # pre_axis_size=1
-        # for i in range(axis):
-        #     pre_axis_size *= input_size[i]
+        ndim = A.ndim
+        total_size = A.numel()
+        max_values = torch.empty_like(A)
 
-        # post_axis_size = 1
-        # for i in range(axis+1, ndim):
-        #     post_axis_size *= input_size[i]
+        A = A.contiguous()
+        max_values = max_values.contiguous()
 
-        # total_size = pre_axis_size * axis_size * post_axis_size
-        # max_values = torch.zeros_like(A)
-
-        # grid = get_grid(total_size)
-        # n = A.numel()
-        # _get_max_values[grid](A, max_values, n, block_size)
+        grid = get_grid(total_size)
+        # _get_max_values[grid](A, max_values, total_size, axis, block_size)
         max_values = A.abs().max(dim=axis, keepdim=True).values
         A_shape = list(A.shape)
         ndim = A.ndim

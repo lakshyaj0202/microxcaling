@@ -45,7 +45,9 @@ ELEM_FMTS = [
 @pytest.mark.parametrize("device, custom_cuda", DEVICE__CUSTOM_CUDA)
 def test_mx_encoding(elem_format, round,
                      flush_fp32_subnorms, device, custom_cuda):
-
+    # print("elem_format", elem_format)
+    # print("flush_fp32_subnorms", flush_fp32_subnorms)
+    # print("device", device)
     scale_bits = elem_format.element_format.bit_precision
     block_size = elem_format.block_size
     x1 = torch.rand((2048, 128), device="cuda")

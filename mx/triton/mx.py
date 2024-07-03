@@ -14,7 +14,6 @@ from common import ROUNDING_MODE_INT
 
 import pdb
 
-
 @triton.jit
 def quantize_mx_kernel  (input_ptr, zero_ptr, max_ptr, n,
                         output_ptr,
@@ -30,22 +29,26 @@ def quantize_mx_kernel  (input_ptr, zero_ptr, max_ptr, n,
     
     ones_tensor = tl.zeros_like(shared_exp) + 1
     zeros_tensor = tl.zeros_like(shared_exp)    
-    check_zeros = ((shared_exp == tl.zeros_like(shared_exp)) & flush_fp32_subnorms)
-    flush_tile = tl.where(check_zeros, ones_tensor, zeros_tensor)
+    check_zeros = ((shared_exp == 0) and (flush_fp32_subnorms)) #
+    flush_tile = tl.where(check_zeros, ones_tensor, zeros_tensor).to(tl.int1)
     
     # Compute the shared scale
     scale_bits = scale_bits.to(tl.int32)
     max_norm_tensor = tl.zeros_like(shared_exp) + elem_max_norm
     scale = get_shared_scale(shared_exp, scale_bits, max_norm_tensor)
 
-    if flush_fp32_subnorms:
-        scaled_input = tl.div_rn(tl.load(input_ptr + offsets, mask), scale)
-        scaled_in = tl.where(flush_tile, scaled_input, tl.load(zero_ptr + offsets, mask))
-    else:
-        scaled_in = tl.load(zero_ptr + offsets, mask)
+    scaled_input = tl.div_rn(tl.load(input_ptr + offsets, mask), scale)
+    scaled_in = tl.where(flush_tile, zeros_tensor, scaled_input)
+
+    # if flush_fp32_subnorms:
+    #     scaled_input = tl.div_rn(tl.load(input_ptr + offsets, mask), scale)
+    #     scaled_in = tl.where(flush_tile, scaled_input, tl.load(zero_ptr + offsets, mask))
+    # else:
+    #     scaled_in = tl.load(zero_ptr + offsets, mask)
 
     scaled_out = quantize_elemwise(scaled_in, elem_mbits, elem_ebits, elem_max_norm,
                                    rounding_mode, True, True)
+
     scaled_out = scaled_out * scale
     
     # pdb.set_trace()
