@@ -55,10 +55,10 @@ def get_trailing_mantissa(float_input: tl.tensor):
     return  trail_mant #FLOAT32_MANTISSA_MASK
 
 @triton.jit
-def get_biased_exponent(float_input: tl.tensor):
-    float_input = float_input.to(tl.float32)
-    int_input = float_input.to(tl.int32, bitcast=True)
-    exp = int_input & 0x7f800000 #FLOAT32_EXP_MASK
+def get_biased_exponent(int_input: tl.tensor):
+    # float_input = float_input.to(tl.float32)
+    # int_input = float_input.to(tl.int32)#, bitcast=True)
+    exp = int_input & 0x7F800000 #FLOAT32_EXP_MASK
     exp = exp >> 23 # FLOAT32_EXP_OFFSET
     return exp
 

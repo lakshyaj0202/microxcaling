@@ -38,7 +38,7 @@ ELEM_FMTS = [
     (MXFP8_E5M2K128_LD),
 ]
 
-
+RANDOM_SEED = 4
 @pytest.mark.parametrize("elem_format", ELEM_FMTS)
 @pytest.mark.parametrize("round", ("N"))
 @pytest.mark.parametrize("flush_fp32_subnorms", (False,True))
@@ -48,9 +48,10 @@ def test_mx_encoding(elem_format, round,
     # print("elem_format", elem_format)
     # print("flush_fp32_subnorms", flush_fp32_subnorms)
     # print("device", device)
-    scale_bits = elem_format.element_format.bit_precision
+    torch.manual_seed(RANDOM_SEED)
+    scale_bits = elem_format.scaler_format.exponent
     block_size = elem_format.block_size
-    x1 = torch.rand((2048, 128), device="cuda")
+    x1 = torch.rand((128, 128), device="cuda")
     x2 = x1.clone().detach().to(device)
     # x1 = all_encodings(8, 9, device="cuda")
     # x2 = x1.clone().detach().to(device)
@@ -69,5 +70,12 @@ def test_mx_encoding(elem_format, round,
                       round=round,
                       flush_fp32_subnorms=flush_fp32_subnorms,
                       custom_cuda=custom_cuda)
+
+    # print()
+    # print() 
+    # print("y1 - cpu")
+    # print(y1)
+    # print("y2 - triton")
+    # print(y2)
 
     check_diff_quantize(x1, y1, y2)

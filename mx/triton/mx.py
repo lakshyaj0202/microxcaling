@@ -7,7 +7,6 @@ default_format = Format.from_shorthand("BFP[8|8]{64,-1}(SN)")
 
 import triton
 from common import get_grid, get_biased_exponent, get_shared_scale, get_trailing_mantissa, construct_float, get_sign
-from quantize import shift_right_round_mantissa, shift_left_mantissa
 from quantize import quantize_elemwise
 
 from common import ROUNDING_MODE_INT
@@ -25,34 +24,32 @@ def quantize_mx_kernel  (input_ptr, zero_ptr, max_ptr, n,
     offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     mask = offsets < n
 
-    shared_exp = get_biased_exponent(tl.load(max_ptr + offsets, mask))
-    
-    ones_tensor = tl.zeros_like(shared_exp) + 1
-    zeros_tensor = tl.zeros_like(shared_exp)    
-    check_zeros = ((shared_exp == 0) and (flush_fp32_subnorms)) #
-    flush_tile = tl.where(check_zeros, ones_tensor, zeros_tensor).to(tl.int1)
+    max_values = tl.load(max_ptr + offsets, mask)
+    max_bits = max_values.to(tl.int32, bitcast = True)
+    shared_exp = get_biased_exponent(max_bits)
+    flush_tile = (shared_exp == 0) & flush_fp32_subnorms
     
     # Compute the shared scale
-    scale_bits = scale_bits.to(tl.int32)
-    max_norm_tensor = tl.zeros_like(shared_exp) + elem_max_norm
-    scale = get_shared_scale(shared_exp, scale_bits, max_norm_tensor)
+    # scale_bits = scale_bits.to(tl.int32)
+    # max_norm_tensor = tl.zeros_like(shared_exp) + elem_max_norm
+    # scale = get_shared_scale(shared_exp, scale_bits, max_norm_tensor)
 
-    scaled_input = tl.div_rn(tl.load(input_ptr + offsets, mask), scale)
-    scaled_in = tl.where(flush_tile, zeros_tensor, scaled_input)
+    # scaled_input = tl.div_rn(tl.load(input_ptr + offsets, mask), scale)
+    # scaled_in = tl.where(flush_tile, tl.zeros_like(scaled_input), scaled_input)
 
     # if flush_fp32_subnorms:
+    #     scaled_in = tl.zeros_like(tl.load(input_ptr + offsets, mask))
+    # else:
     #     scaled_input = tl.div_rn(tl.load(input_ptr + offsets, mask), scale)
     #     scaled_in = tl.where(flush_tile, scaled_input, tl.load(zero_ptr + offsets, mask))
-    # else:
-    #     scaled_in = tl.load(zero_ptr + offsets, mask)
 
-    scaled_out = quantize_elemwise(scaled_in, elem_mbits, elem_ebits, elem_max_norm,
-                                   rounding_mode, True, True)
+    # scaled_out = quantize_elemwise(scaled_in, elem_mbits, elem_ebits, elem_max_norm,
+    #                                rounding_mode, True, True)
 
-    scaled_out = scaled_out * scale
+    # scaled_out = scaled_out * scale
     
     # pdb.set_trace()
-    tl.store(output_ptr + offsets, scaled_out, mask)
+    tl.store(output_ptr + offsets, shared_exp, mask)
     
 def quantize_mx(in_tensor, scale_bits, ebits, mbits, max_norm, max_values, 
                 axis, block_size, flush_fp32_subnorms = False, rounding_mode="N"):

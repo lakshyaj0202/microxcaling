@@ -245,7 +245,7 @@ def _quantize_mx(
         A = A.contiguous()
         max_values = max_values.contiguous()
 
-        grid = get_grid(total_size)
+        # grid = get_grid(total_size)
         # _get_max_values[grid](A, max_values, total_size, axis, block_size)
         max_values = A.abs().max(dim=axis, keepdim=True).values
         A_shape = list(A.shape)
@@ -254,6 +254,7 @@ def _quantize_mx(
             A_shape[i] = 1
         for i in range(axis+1, ndim):
             A_shape[i] = 1
+
         max_values = max_values.repeat(A_shape)
         max_values = max_values.to("cuda")
 
@@ -265,14 +266,16 @@ def _quantize_mx(
                 A, scale_bits, ebits, mbits, max_norm,
                 max_values, axis, block_size,
                 flush_fp32_subnorms, ROUNDING_MODE[round])
+            print("triton")
+            print(A.flatten())
         else:
             raise ValueError("Unrecognized device type %s" % A.device.type)
     else:
         # Get shared exponents
         shared_exp = _shared_exponents(
-            A, method=shared_exp_method, axes=shared_exp_axes, ebits=0,
+            A, method=shared_exp_method, axes=shared_exp_axes, ebits=8,
         )
-
+        
         # Flush subnormal FP32 inputs to zero
         if flush_fp32_subnorms:
             A = A * (shared_exp > -FLOAT32_MIN_NORMAL).type(A.dtype)
@@ -284,6 +287,8 @@ def _quantize_mx(
         scale_emax = 2**(scale_bits-1) - 1
         shared_exp[shared_exp > scale_emax] = float("NaN")
         shared_exp[shared_exp < -scale_emax] = -scale_emax
+        print("cpu")
+        print(shared_exp.flatten())
 
         A = A / (2**shared_exp)
 

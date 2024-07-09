@@ -118,7 +118,12 @@ def check_diff_quantize(x, y1, y2, tol=0, ntol=0, handle_infs=False):
 
     # Check for differences
     max_diff = np.max(diff)
-    ndiff = np.sum(diff > tol)                # num of violations
+    ndiff = np.sum(diff > tol)       # num of violations
+    # TODO: add assertion to check exp match
+    print("Orig:", x[0][0], get_s_e_m(x[0][0]))
+    print("y1:  ", y1[0][0], get_s_e_m(y1[0][0]))
+    print("y2:  ", y2[0][0], get_s_e_m(y2[0][0]))
+
     if (max_diff > tol and ndiff > ntol) or np.any(torch_infs != cuda_infs):
         where_diff = (diff != 0) | (torch_infs != cuda_infs)
         print("%d/%d mismatches" % (np.count_nonzero(where_diff), where_diff.size))

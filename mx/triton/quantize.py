@@ -84,7 +84,7 @@ def quantize_elemwise(input:tl.tensor, bits, exp_bits, max_norm,
     new_biased_exp = biased_exp - 127 + new_bias # biased_exp - FLOAT32_EXP_BIAS + new_bias
     
     # Skip denorms
-    cond_skip_denorms = ((not is_int) and (not allow_denorm)) and (new_biased_exp < 1)
+    cond_skip_denorms = ((~is_int) & (~allow_denorm)) & (new_biased_exp < 1)
 
     # Use exp_diff to truncate additional bits for subnorms
     # mbits includes implicit 1, so when new_biased_exp==0
@@ -93,9 +93,9 @@ def quantize_elemwise(input:tl.tensor, bits, exp_bits, max_norm,
     exp_diff = tl.where(exp_diff > 24, tl.zeros_like(exp_diff) + 24, exp_diff)
 
     biased_exp_check = biased_exp == 0
-    tmant = shift_right_round_mantissa(tmant, biased_exp_check,
+    tmant = tl.where(tmant == 0, tmant, shift_right_round_mantissa(tmant, biased_exp_check,
                                        exp_diff, mbits, rounding_mode,
-                                       not is_int)
+                                       not is_int))
     
     overflow = shift_left_mantissa(tmant, exp_diff, biased_exp_check, mbits)
 
@@ -106,12 +106,14 @@ def quantize_elemwise(input:tl.tensor, bits, exp_bits, max_norm,
     neg_max_norm_tensor = tl.zeros_like(output) - max_norm
     max_norm_tensor = tl.zeros_like(output) + max_norm
     biased_exp_tensor = tl.zeros_like(biased_exp) + 0xFF
-    tmant_tensor = tl.zeros_like(tmant)
-    output = tl.where((tl.abs(output) >  max_norm_tensor) & (is_int or saturate_normals), 
-                      tl.where(sign, neg_max_norm_tensor, max_norm_tensor),
-                      construct_float(sign, biased_exp_tensor, tmant_tensor))
+    output = tl.where((tl.abs(output) >  max_norm_tensor), 
+                      tl.where(is_int or saturate_normals, tl.where(sign, neg_max_norm_tensor, max_norm_tensor), construct_float(sign, biased_exp_tensor, tl.zeros_like(tmant))),
+                      output)
+    # output = tl.where((tl.abs(output) >  max_norm_tensor) & (is_int | saturate_normals), 
+    #                   tl.where(sign, neg_max_norm_tensor, max_norm_tensor),
+    #                   construct_float(sign, biased_exp_tensor, tmant_tensor))
 
     # if mantissa is 0, return 0, added condition at the end
-    output = tl.where(tmant == 0 & cond_skip_denorms, tl.zeros_like(output), output)
+    output = tl.where(tmant == 0 | cond_skip_denorms, tl.zeros_like(output), output)
     return output
     
