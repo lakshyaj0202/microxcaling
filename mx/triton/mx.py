@@ -25,8 +25,15 @@ def quantize_mx_kernel  (input_ptr, zero_ptr, max_ptr, n,
     mask = offsets < n
 
     max_values = tl.load(max_ptr + offsets, mask)
-    max_bits = max_values.to(tl.int32, bitcast = True)
-    shared_exp = get_biased_exponent(max_bits)
+    # max_bits = max_values.to(tl.int32, bitcast = True)
+    # exp = tl.floor(
+    #     tl.log2(
+    #         shared_exp + FLOAT32_MIN_NORMAL * (shared_exp == 0).type(shared_exp.dtype)
+    #     )
+    # )
+    # exp = max_bits & 0x7f800000 #FLOAT32_EXP_MASK
+    # shared_exp = exp >> 23
+    shared_exp = get_biased_exponent(max_values)
     flush_tile = (shared_exp == 0) & flush_fp32_subnorms
     
     # Compute the shared scale
